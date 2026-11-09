@@ -308,6 +308,24 @@ class EasyIQTokenAuthTests(unittest.TestCase):
             # Auth errors make HA start a MitID reauth flow; a timeout must not.
             self.assertNotIsInstance(ctx.exception, mitid_auth.MitIDAuthError)
 
+    def test_aula_maintenance_during_profile_discovery_is_transient(self) -> None:
+        class MaintenanceSession(FakeSession):
+            def get(self, url: str, **kwargs: Any) -> FakeResponse:
+                return FakeResponse({}, status_code=503, text="maintenance")
+
+        client = client_module.EasyIQClient(
+            "guardian@example.test",
+            mitid_auth.AulaTokenState(
+                access_token="access-123",
+                refresh_token="refresh-123",
+                expires_at=time.time() + 3600,
+            ),
+            session_factory=lambda: MaintenanceSession(),
+        )
+
+        with self.assertRaises(client_module.EasyIQConnectionError):
+            asyncio.run(client.authenticate())
+
     def test_calendar_events_fall_back_to_child_user_id_when_profile_id_fails(self) -> None:
         fake_session = CalendarFallbackSession()
         token_state = mitid_auth.AulaTokenState(

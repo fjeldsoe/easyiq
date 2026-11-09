@@ -849,6 +849,11 @@ class EasyIQClient:
                     ver_json = ver.json()
                     self._profiles = ver_json["data"]["profiles"]
                     api_success = True
+                elif ver.status_code >= 500:
+                    # Aula down or in maintenance: retry later, the token is fine.
+                    raise EasyIQConnectionError(
+                        f"Aula profile discovery failed: HTTP {ver.status_code}"
+                    )
                 else:
                     raise EasyIQAuthError(
                         f"Aula profile discovery failed: HTTP {ver.status_code}"
@@ -862,6 +867,10 @@ class EasyIQClient:
             )
             if profile_response.status_code in (401, 403):
                 raise MitIDAuthRejected("Aula profile context token was rejected")
+            if profile_response.status_code >= 500:
+                raise EasyIQConnectionError(
+                    f"Aula profile context failed: HTTP {profile_response.status_code}"
+                )
             if profile_response.status_code != 200:
                 raise EasyIQAuthError(
                     f"Aula profile context failed: HTTP {profile_response.status_code}"
