@@ -131,6 +131,30 @@ class MitIDLiveAuthRunnerTests(unittest.TestCase):
         self.assertEqual("client setup failed", failed.message)
         self.assertEqual(["ha-flow-id"], hass.flow.configured_flow_ids)
 
+    def test_live_auth_runner_logs_when_flow_is_gone(self) -> None:
+        manager = mitid_auth.MitIDAuthManager()
+        session = manager.start_session("guardian@example.test", ha_flow_id="closed")
+
+        class UnknownFlow(Exception):
+            pass
+
+        async def closed_flow(_flow_id: str) -> None:
+            raise UnknownFlow
+
+        hass = FakeHass()
+        hass.flow.async_configure = closed_flow
+
+        # Must not raise out of the background task, and must leave a log line.
+        with self.assertLogs(mitid_auth._LOGGER, level="DEBUG"):
+            asyncio.run(
+                mitid_auth.run_live_mitid_auth(
+                    hass,
+                    manager,
+                    session.flow_id,
+                    client_factory=failing_client_factory,
+                )
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

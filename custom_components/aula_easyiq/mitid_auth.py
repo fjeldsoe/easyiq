@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import dataclass, replace
 import time
 from typing import Any, Callable, Protocol
@@ -39,6 +40,9 @@ except ImportError:
         CONF_TOKEN_EXPIRES_AT,
         CONF_WEEKPLAN,
     )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class MitIDAuthError(Exception):
@@ -406,8 +410,12 @@ async def run_live_mitid_auth(
             try:
                 await _maybe_await(flow_mgr.async_configure(latest.ha_flow_id))
             except Exception:  # pylint: disable=broad-except
-                # The user closed the dialog meanwhile (UnknownFlow); nothing to advance.
-                pass
+                # Usually UnknownFlow (dialog closed meanwhile); log so real bugs stay visible.
+                _LOGGER.debug(
+                    "Could not advance MitID config flow %s",
+                    latest.ha_flow_id,
+                    exc_info=True,
+                )
 
 
 def start_live_mitid_auth(

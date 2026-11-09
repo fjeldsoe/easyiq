@@ -302,8 +302,9 @@ class EasyIQTokenAuthTests(unittest.TestCase):
                 session_factory=lambda: FakeSession(),
             )
 
+            # authenticate() is what every coordinator update calls.
             with self.assertRaises(client_module.EasyIQConnectionError) as ctx:
-                client._authenticate_sync()
+                asyncio.run(client.authenticate())
             # Auth errors make HA start a MitID reauth flow; a timeout must not.
             self.assertNotIsInstance(ctx.exception, mitid_auth.MitIDAuthError)
 

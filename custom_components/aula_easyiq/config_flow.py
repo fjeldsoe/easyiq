@@ -81,9 +81,11 @@ def _absolute_auth_url(hass: HomeAssistant, path: str) -> str:
     try:
         from homeassistant.helpers.network import get_url
 
-        return f"{get_url(hass)}{path}"
+        # Match the address the user is on; the default prefers the internal URL,
+        # which a phone outside the home cannot reach.
+        return f"{get_url(hass, require_current_request=True)}{path}"
     except Exception:  # pylint: disable=broad-except
-        # No URL configured in HA (or unit-test stubs): fall back to the relative path.
+        # Not in a request, no matching URL, or unit-test stubs: relative path.
         return path
 
 
