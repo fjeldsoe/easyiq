@@ -249,6 +249,53 @@ class MitIDExternalFlowTests(unittest.TestCase):
         self.assertEqual("EasyIQ (guardian@example.test)", finish["title"])
         self.assertEqual("access-token", finish["data"]["access_token"])
 
+    def test_failed_external_step_ends_with_done_then_shows_error(self) -> None:
+        manager = mitid_auth.MitIDAuthManager()
+        session = manager.start_session("guardian@example.test", ha_flow_id="ha-flow-id")
+        manager.fail_session(session.flow_id, "expired")
+
+        flow = config_flow.ConfigFlow()
+        flow.hass = FakeHass(manager)
+        flow._auth_session_id = session.flow_id
+
+        # HA raises if an external step returns a form directly.
+        result = asyncio.run(flow.async_step_mitid())
+        self.assertEqual("external_done", result["type"])
+        self.assertEqual("mitid_finish", result["step_id"])
+
+        finish = asyncio.run(flow.async_step_mitid_finish())
+        self.assertEqual("form", finish["type"])
+        self.assertEqual({"base": "invalid_auth"}, finish["errors"])
+
+    def test_pending_external_step_exposes_link_placeholder(self) -> None:
+        manager = mitid_auth.MitIDAuthManager()
+        session = manager.start_session("guardian@example.test", ha_flow_id="ha-flow-id")
+
+        flow = config_flow.ConfigFlow()
+        flow.hass = FakeHass(manager)
+        flow._auth_session_id = session.flow_id
+
+        result = asyncio.run(flow.async_step_mitid())
+        self.assertEqual("external", result["type"])
+        self.assertEqual(result["url"], result["description_placeholders"]["url"])
+        self.assertTrue(result["url"].endswith(session.external_url))
+
+    def test_reauth_waits_for_confirmation_before_starting_mitid(self) -> None:
+        manager = mitid_auth.MitIDAuthManager()
+        flow = config_flow.ConfigFlow()
+        hass = FakeHass(manager)
+        hass.config_entries = types.SimpleNamespace(async_get_entry=lambda _id: object())
+        flow.hass = hass
+        flow.context = {"entry_id": "entry-1"}
+
+        result = asyncio.run(
+            flow.async_step_reauth({"mitid_username": "guardian@example.test"})
+        )
+
+        self.assertEqual("form", result["type"])
+        self.assertEqual("reauth_confirm", result["step_id"])
+        self.assertEqual({}, manager._sessions)
+
 
 if __name__ == "__main__":
     unittest.main()

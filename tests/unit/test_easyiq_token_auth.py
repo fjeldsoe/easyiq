@@ -286,6 +286,27 @@ class EasyIQTokenAuthTests(unittest.TestCase):
         with self.assertRaises(mitid_auth.MitIDAuthRejected):
             failing_client._authenticate_sync()
 
+    def test_refresh_timeout_is_transient_not_reauth(self) -> None:
+        for failure in (
+            TimeoutError("login.aula.dk read timed out"),
+            mitid_auth.MitIDAuthError("Aula token refresh failed: HTTP 503"),
+        ):
+            client = client_module.EasyIQClient(
+                "guardian@example.test",
+                mitid_auth.AulaTokenState(
+                    access_token="old-access",
+                    refresh_token="old-refresh",
+                    expires_at=time.time() - 10,
+                ),
+                token_refresher=RecordingRefresher(fail=failure),
+                session_factory=lambda: FakeSession(),
+            )
+
+            with self.assertRaises(client_module.EasyIQConnectionError) as ctx:
+                client._authenticate_sync()
+            # Auth errors make HA start a MitID reauth flow; a timeout must not.
+            self.assertNotIsInstance(ctx.exception, mitid_auth.MitIDAuthError)
+
     def test_calendar_events_fall_back_to_child_user_id_when_profile_id_fails(self) -> None:
         fake_session = CalendarFallbackSession()
         token_state = mitid_auth.AulaTokenState(

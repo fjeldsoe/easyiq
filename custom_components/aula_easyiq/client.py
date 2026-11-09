@@ -580,6 +580,10 @@ class EasyIQAuthError(MitIDAuthError):
     """Raised when EasyIQ cannot authenticate with Aula token state."""
 
 
+class EasyIQConnectionError(Exception):
+    """Raised when Aula is unreachable; transient, so it must not trigger MitID reauth."""
+
+
 class EasyIQClient:
     """Client for communicating with EasyIQ API using the working CalendarGetWeekplanEvents approach."""
 
@@ -789,8 +793,9 @@ class EasyIQClient:
                 self._on_token_update(self.token_state)
         except MitIDAuthRejected:
             raise
-        except MitIDAuthError:
-            raise
+        except (MitIDAuthError, OSError) as err:
+            # Timeouts and HTTP 5xx (requests errors are OSError); retry next poll.
+            raise EasyIQConnectionError(f"Aula token refresh failed: {err}") from err
         except Exception as err:
             raise EasyIQAuthError(f"Aula token refresh failed: {err}") from err
 
@@ -912,8 +917,10 @@ class EasyIQClient:
 
             self._authenticated = True
             return True
-        except MitIDAuthError:
+        except (MitIDAuthError, EasyIQConnectionError):
             raise
+        except OSError as err:
+            raise EasyIQConnectionError(f"Aula unreachable: {err}") from err
         except Exception as err:
             raise EasyIQAuthError(f"Authentication failed: {err}") from err
 

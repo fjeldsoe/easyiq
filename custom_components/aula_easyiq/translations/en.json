@@ -44,9 +44,16 @@
         "title": "MitID Authentication"
       },
       "mitid": {
-        "description": "Complete guardian MitID authentication in the opened browser window.",
+        "description": "Open the MitID page and approve the Aula login in the MitID app: [Open MitID page]({url})",
         "title": "Complete MitID Authentication"
+      },
+      "reauth_confirm": {
+        "title": "Log in to EasyIQ again",
+        "description": "EasyIQ needs a new MitID login. Press Submit, then approve the request in the MitID app."
       }
+    },
+    "abort": {
+      "reauth_successful": "Reauthentication was successful"
     }
   },
   "options": {

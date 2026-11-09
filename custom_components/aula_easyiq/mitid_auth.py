@@ -403,7 +403,11 @@ async def run_live_mitid_auth(
     if latest and latest.ha_flow_id:
         flow_mgr = hass.config_entries.flow
         if hasattr(flow_mgr, "async_configure"):
-            await _maybe_await(flow_mgr.async_configure(latest.ha_flow_id))
+            try:
+                await _maybe_await(flow_mgr.async_configure(latest.ha_flow_id))
+            except Exception:  # pylint: disable=broad-except
+                # The user closed the dialog meanwhile (UnknownFlow); nothing to advance.
+                pass
 
 
 def start_live_mitid_auth(

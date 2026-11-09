@@ -76,6 +76,17 @@ def _normalized_mitid_username(data: dict[str, Any]) -> str:
     return str(data.get(CONF_MITID_USERNAME, "")).strip().lower()
 
 
+def _absolute_auth_url(hass: HomeAssistant, path: str) -> str:
+    """Return a full URL for the auth page; relative links in the flow dialog do not open."""
+    try:
+        from homeassistant.helpers.network import get_url
+
+        return f"{get_url(hass)}{path}"
+    except Exception:  # pylint: disable=broad-except
+        # No URL configured in HA (or unit-test stubs): fall back to the relative path.
+        return path
+
+
 def entry_data_from_auth(
     user_input: dict[str, Any],
     session: MitIDAuthSession,
@@ -125,6 +136,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pending_user_input: dict[str, Any] = {}
         self._auth_session_id: str | None = None
         self._reauth_entry: ConfigEntry | None = None
+        self._reauth_defaults: dict[str, Any] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -166,13 +178,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self._create_entry_from_session(session, info["title"])
 
             start_live_mitid_auth(self.hass, session.flow_id)
-            return self.async_external_step(
-                step_id="mitid",
-                url=session.external_url,
-            )
+            return self._mitid_external_step(session)
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+    def _mitid_external_step(self, session: MitIDAuthSession) -> FlowResult:
+        """Show the external MitID step with a clickable link (pop-ups are often blocked)."""
+        url = _absolute_auth_url(self.hass, session.external_url)
+        return self.async_external_step(
+            step_id="mitid",
+            url=url,
+            description_placeholders={"url": url},
         )
 
     async def _async_register_auth_views(self) -> None:
@@ -192,20 +210,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if session is None:
             return self.async_abort(reason="missing_auth_session")
 
-        if session.status == "failed":
-            return self.async_show_form(
-                step_id="user",
-                data_schema=STEP_USER_DATA_SCHEMA,
-                errors={"base": "invalid_auth"},
-            )
+        # HA only allows an external step to end in another external step or
+        # external_step_done, so failures are reported from mitid_finish.
+        if session.status == "failed" or session.complete:
+            return self.async_external_step_done(next_step_id="mitid_finish")
 
-        if not session.complete:
-            return self.async_external_step(
-                step_id="mitid",
-                url=session.external_url,
-            )
-
-        return self.async_external_step_done(next_step_id="mitid_finish")
+        return self._mitid_external_step(session)
 
     async def async_step_mitid_finish(
         self, user_input: dict[str, Any] | None = None
@@ -226,10 +236,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         if not session.complete:
-            return self.async_external_step(
-                step_id="mitid",
-                url=session.external_url,
-            )
+            return self._mitid_external_step(session)
 
         return await self._create_entry_from_session(
             session, f"EasyIQ ({session.username})"
@@ -242,13 +249,25 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
         )
-        defaults = {
+        self._reauth_defaults = {
             CONF_MITID_USERNAME: entry_data.get(
                 CONF_MITID_USERNAME, entry_data.get(CONF_USERNAME, "")
             ),
             **_feature_data(entry_data),
         }
-        return await self.async_step_user(defaults)
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Wait for the user before starting MitID.
+
+        HA creates reauth flows in the background; starting MitID straight away
+        sends an app request nobody is waiting for, which then expires.
+        """
+        if user_input is None:
+            return self.async_show_form(step_id="reauth_confirm")
+        return await self.async_step_user(self._reauth_defaults)
 
     async def _create_entry_from_session(
         self,
