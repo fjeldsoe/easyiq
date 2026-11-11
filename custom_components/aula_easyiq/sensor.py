@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .client import EasyIQAuthError, EasyIQClient
+from .client import EasyIQAuthError, EasyIQClient, _upcoming_events as _upcoming
 from .const import (
     CONF_WEEKPLAN,
     CONF_WEEKPLAN_INTERVAL,
@@ -272,7 +272,7 @@ class EasyIQChildSensor(CoordinatorEntity, SensorEntity):
             })
             
             # Add first few events as attributes for easy access
-            events = weekplan_data.get('events', [])
+            events = _upcoming(weekplan_data.get('events', []))
             for i, event in enumerate(events[:5]):  # Limit to first 5 events
                 attributes[f"event_{i+1}_subject"] = event.get('courses', 'Unknown')
                 attributes[f"event_{i+1}_time"] = event.get('start', 'Unknown')
@@ -313,7 +313,7 @@ class EasyIQWeekplanSensor(CoordinatorEntity, SensorEntity):
             # Include only the most recent events (limit to 10)
             events = weekplan_data.get("events", [])
             if isinstance(events, list):
-                limited_weekplan["events"] = events[:10]
+                limited_weekplan["events"] = _upcoming(events)[:10]
                 limited_weekplan["total_events"] = len(events)
             limited_weekplan["raw_event_count"] = weekplan_data.get(
                 "raw_event_count",

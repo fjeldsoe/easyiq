@@ -367,6 +367,12 @@ def _event_start_date(event: dict[str, Any]) -> datetime.date | None:
     return _event_date(event.get("start"))
 
 
+def _upcoming_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return events from today onward (keeps events whose date is unknown)."""
+    today = datetime.date.today()
+    return [e for e in events if (_event_start_date(e) or today) >= today]
+
+
 def _event_time_text(value: Any) -> str:
     """Return a readable time for an EasyIQ event timestamp."""
     parsed = _parse_easyiq_datetime(value)
@@ -1958,14 +1964,16 @@ class EasyIQClient:
                         
                         # Filter events based on configured days
                         weekplan_events = self._filter_events_by_days(all_weekplan_events, weekplan_days)
-                        homework_events = self._filter_events_by_days(all_homework_events, homework_days)
+                        homework_events = self._filter_events_by_days(
+                            all_homework_events, homework_days, include_earlier_weekdays=False
+                        )
                         
                         # Store weekplan data
                         weekplan_desc = f"Next {weekplan_days} Business Day{'s' if weekplan_days != 1 else ''}"
                         self.weekplan_data[child_id] = {
                             "week": weekplan_desc,
                             "events": weekplan_events,
-                            "html_content": self._build_weekplan_html(weekplan_events, weekplan_days),
+                            "html_content": self._build_weekplan_html(_upcoming_events(weekplan_events), weekplan_days),
                             "raw_data": business_day_events,
                             "raw_event_count": len(business_day_events),
                             "event_type_counts": _event_type_counts(business_day_events),
@@ -2131,7 +2139,7 @@ class EasyIQClient:
                                 self.weekplan_data[child_id] = {
                                     "week": weekplan_desc,
                                     "events": weekplan_events,
-                                    "html_content": self._build_weekplan_html(weekplan_events, weekplan_days),
+                                    "html_content": self._build_weekplan_html(_upcoming_events(weekplan_events), weekplan_days),
                                     "raw_data": business_day_events,
                                     "raw_event_count": len(business_day_events),
                                     "event_type_counts": _event_type_counts(business_day_events),
@@ -2149,7 +2157,9 @@ class EasyIQClient:
                                     business_day_events,
                                     _HOMEWORK_EVENT_TYPES,
                                 )
-                                homework_events = self._filter_events_by_days(all_homework_events, homework_days)
+                                homework_events = self._filter_events_by_days(
+                                    all_homework_events, homework_days, include_earlier_weekdays=False
+                                )
                                 homework_assignments = []
                                 for event in homework_events:
                                     assignment_data = {
@@ -2219,15 +2229,28 @@ class EasyIQClient:
             )
             raise
 
-    def _filter_events_by_days(self, events: list[dict[str, Any]], days: int) -> list[dict[str, Any]]:
-        """Filter events to only include those within the specified number of business days."""
+    def _filter_events_by_days(
+        self,
+        events: list[dict[str, Any]],
+        days: int,
+        include_earlier_weekdays: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Filter events to this week's earlier weekdays plus the next N business days.
+
+        Homework passes include_earlier_weekdays=False so finished homework from
+        earlier in the week is not listed.
+        """
         if self.fixture_mode:
             return events
 
         if not events or days <= 0:
             return []
 
-        wanted = set(business_target_dates(datetime.datetime.now().date(), days))
+        wanted = set(
+            business_target_dates(
+                datetime.datetime.now().date(), days, include_earlier_weekdays
+            )
+        )
         return [event for event in events if _event_start_date(event) in wanted]
 
     def _build_weekplan_html(self, weekplan_events: list[dict[str, Any]], days: int = 5) -> str:

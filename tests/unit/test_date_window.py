@@ -62,6 +62,40 @@ class BusinessTargetDatesTests(unittest.TestCase):
     def test_zero_days_returns_nothing(self) -> None:
         self.assertEqual(date_window.business_target_dates(date(2026, 11, 11), 0), [])
 
+    def test_sunday_keeps_the_past_week(self) -> None:
+        # 2026-11-15 is a Sunday
+        self.assertEqual(
+            date_window.business_target_dates(date(2026, 11, 15), 1),
+            [date(2026, 11, d) for d in (9, 10, 11, 12, 13, 16)],
+        )
+
+    def test_friday_keeps_four_earlier_days(self) -> None:
+        # 2026-11-13 is a Friday
+        self.assertEqual(
+            date_window.business_target_dates(date(2026, 11, 13), 1),
+            [date(2026, 11, d) for d in (9, 10, 11, 12, 13)],
+        )
+
+    def test_forward_window_spans_two_weekends(self) -> None:
+        # Thursday 2026-11-12 with 7 business days forward
+        dates = date_window.business_target_dates(date(2026, 11, 12), 7)
+        self.assertEqual(dates[:3], [date(2026, 11, 9), date(2026, 11, 10), date(2026, 11, 11)])
+        self.assertEqual(
+            dates[3:],
+            [date(2026, 11, d) for d in (12, 13, 16, 17, 18, 19, 20)],
+        )
+
+    def test_negative_days_returns_nothing(self) -> None:
+        self.assertEqual(date_window.business_target_dates(date(2026, 11, 11), -1), [])
+
+    def test_without_earlier_weekdays_starts_today(self) -> None:
+        self.assertEqual(
+            date_window.business_target_dates(
+                date(2026, 11, 11), 2, include_earlier_weekdays=False
+            ),
+            [date(2026, 11, 11), date(2026, 11, 12)],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
