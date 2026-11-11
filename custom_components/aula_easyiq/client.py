@@ -10,6 +10,11 @@ import datetime
 import json
 import re
 
+try:
+    from .date_window import business_target_dates
+except ImportError:  # loaded standalone (offline unit tests)
+    from date_window import business_target_dates
+
 # Import dependencies with better error handling
 aiohttp = None
 pytz = None
@@ -1057,39 +1062,19 @@ class EasyIQClient:
                 events = await self._get_calendar_events(child_id, week_offset)
                 all_events.extend(events)
             
-            # Filter events to only include the next N business days
-            business_day_events = []
-            business_days_found = 0
-            target_dates = []
-            
-            # Start from the beginning of the target week
+            # Keep this week's earlier weekdays plus the next N business days
             if weeks_ahead == 0:
-                check_date = current_date.date()
+                dates = business_target_dates(current_date.date(), days)
             else:
-                # Calculate the start date for the target week
-                days_to_add = weeks_ahead * 7
-                # Find the Monday of the target week
-                target_date = current_date + datetime.timedelta(days=days_to_add)
-                # Get to Monday of that week
-                days_since_monday = target_date.weekday()
-                monday_of_week = target_date - datetime.timedelta(days=days_since_monday)
-                check_date = monday_of_week.date()
-            
-            while business_days_found < days:
-                # Skip weekends (Saturday=5, Sunday=6)
-                if check_date.weekday() < 5:  # Monday=0 to Friday=4
-                    target_dates.append(check_date.isoformat())
-                    # Find events for this business day
-                    day_events = [
-                        event for event in all_events 
-                        if _event_start_date(event) == check_date
-                    ]
-                    business_day_events.extend(day_events)
-                    business_days_found += 1
-                
-                # Move to next day
-                check_date += datetime.timedelta(days=1)
-            
+                target_date = current_date + datetime.timedelta(days=weeks_ahead * 7)
+                monday_of_week = (target_date - datetime.timedelta(days=target_date.weekday())).date()
+                dates = business_target_dates(monday_of_week, days)
+            target_dates = [d.isoformat() for d in dates]
+            wanted = set(dates)
+            business_day_events = [
+                event for event in all_events if _event_start_date(event) in wanted
+            ]
+
             raw_type_counts = _event_type_counts(all_events)
             business_day_type_counts = _event_type_counts(business_day_events)
             self._record_calendar_summary(
@@ -2241,30 +2226,9 @@ class EasyIQClient:
 
         if not events or days <= 0:
             return []
-        
-        # Get current date
-        current_date = datetime.datetime.now().date()
-        
-        # Calculate the target business days
-        business_days_found = 0
-        check_date = current_date
-        target_dates = []
-        
-        while business_days_found < days:
-            # Skip weekends (Saturday=5, Sunday=6)
-            if check_date.weekday() < 5:  # Monday=0 to Friday=4
-                target_dates.append(check_date)
-                business_days_found += 1
-            check_date += datetime.timedelta(days=1)
-        
-        # Filter events to only include those on target dates
-        filtered_events = []
-        for event in events:
-            event_start_date = _event_start_date(event)
-            if event_start_date in target_dates:
-                filtered_events.append(event)
-        
-        return filtered_events
+
+        wanted = set(business_target_dates(datetime.datetime.now().date(), days))
+        return [event for event in events if _event_start_date(event) in wanted]
 
     def _build_weekplan_html(self, weekplan_events: list[dict[str, Any]], days: int = 5) -> str:
         """Build HTML content for weekplan events."""
